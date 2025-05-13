@@ -8,16 +8,19 @@ def load_data():
 
     # clean column names
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_") \
-        .str.replace("(", "", regrex=False).str.replace(")", "", regrex=False) \
+        .str.replace("(", "", regex=False).str.replace(")", "", regex=False) \
         .str.replace("/", "_")
+    print(" columns ;",df.columns)
     
     # replace blank strings with NaN for object columns
-    df[df.select_dtypes(include='object').columns] = df.select_dtypes(include='object').replace
-
+    #df[df.select_dtypes(include='object').columns] = df.select_dtypes(include='object').replace
+    
+    
+    print(df.head())
     # now fill essential missing values
-    df['country_region'] = df.get('country_region', pd.Series()).fillna("Unknown")
-    df['operator'] = df.get('country_region', pd.Series()).fillna('Unknown')
-    df['aircraft_manufacturer'] = df.get('aircraft_manufacturer', pd.Series()).fillna('Unknown')
+    df['country_region'] = df['country_region'].fillna("Unknown")#df.get('country_region', pd.Series()).fillna("Unknown")
+    df['operator'] = df['operator'].fillna('Unknown')
+    df['aircraft_manufacturer'] = df['aircraft_manufacturer'].fillna('Unknown')#df.get('aircraft_manufacturer', pd.Series()).fillna('Unknown')
 
     # convert numeric columns
     df['year'] = pd.to_numeric(df.get('year', pd.Series()), errors='coerce')
@@ -57,85 +60,97 @@ def load_data():
     df.drop_duplicates(inplace=True)
     return df
 
-
-
-
+# Load data
 df = load_data()
-# app title
+
+# Streamlit app layout
 st.title('Air Crash Data Analysis')
 st.sidebar.header('Filters')
 
-# --- Filters in the sidebar ---
-
-# create filters
+# Sidebar filters
+#filters = {
+#    "year": df["year"].dropna().unique(),
+#    "quarter": df["quarter"].dropna().unique(),
+#    "month": df["month"].dropna().unique(),
+#}
 filters = {
-    "Year": df["Year"].unique(),
-    "Quarter": df["Quarter"].unique(),
-    "Month": df["Month"].unique(),
-
+    "year": df["year"].dropna().unique().tolist(),
+    "quarter": df["quarter"].dropna().unique().tolist(),
+    "month": df["month"].dropna().unique().tolist(),
 }
 
-# store user selection
+# Store user selections
 selected_filters = {}
-
-#generate multi-select widgets dynamically
 for key, options in filters.items():
-    selected_filters[key]=st.sidebar.multiselect(key,options)
+    selected_filters[key] = st.sidebar.multiselect(key.capitalize(), sorted(options))
 
-# lets have the full data
+# Apply filters
 filtered_df = df.copy()
 for key, selected_values in selected_filters.items():
     if selected_values:
-        filtered_df=filtered_df[filtered_df[key].\
-                                isin(selected_values)]
-        
-#display the data                 
+        filtered_df = filtered_df[filtered_df[key].isin(selected_values)]
+
+# Display data
 st.dataframe(filtered_df.head())
-
-# calculations
+print (filtered_df.columns)
+# Calculations
 no_of_fatalities = len(filtered_df)
-total_year = filtered_df["Year"].sum()
-Sum_of_Fatalities = filtered_df["Sum of Fatalities (air)"].sum()
-no_of_aircrafts = filtered_df["Aircraft"].nunique()
+total_year = filtered_df["year"].sum()
+sum_of_fatalities = filtered_df["sum_of_fatalities_air"].sum()
+no_of_aircrafts = filtered_df["aircraft"].nunique()
 
-# streamlit column component
-col1, col2, col3, col4, = st.columns(4)
+# Metric display
+col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("Fatalities", no_of_fatalities )
+    st.metric("Fatality Records", no_of_fatalities)
 
 with col2:
-    st.metric("Year", total_year)
+    st.metric("Sum of Years", int(total_year))
 
 with col3:
-    st.metric("Total Fatalities", Sum_of_Fatalities)
+    st.metric("Total Fatalities (Air)", int(sum_of_fatalities))
 
 with col4:
-    st.metric("Aircraft", no_of_aircrafts)
+    st.metric("Unique Aircraft", int(no_of_aircrafts))
 
-
-#charts
-st.subheader("Year With Largest Fatalities")
-crashes_per_year = filtered_df.groupby("Year")["Total Fatalities"].sum().nlargest(5).reset_index()
+# Top 5 years with highest fatalities
+st.subheader("Top 5 Years With Highest Fatalities")
+crashes_per_year = (
+    filtered_df.groupby("year")["sum_of_fatalities_air"]
+    .sum()
+    .nlargest(5)
+    .reset_index()
+)
 
 st.write(crashes_per_year)
 
-# altair plotting libaray
-
-st.subheader("Top 5 Yearly Fatalities")
-
-# configure the bar chart
+# Bar chart
 
 
-chart = alt.Chart(crashes_per_year).mark_bar().encode(
-    x=alt.X('Number of Crashes:Q', title="Number of Crashes"),
-    y=alt.Y("Aircraft Type:N"),
-    color = alt.Color("Aircraft Type", legend = None)
-).properties(height = 300)
+if not crashes_per_year.empty:
+    st.subheader("Top 5 Yearly Fatalities (Bar Chart)")
+    chart = alt.Chart(crashes_per_year).mark_bar().encode(
+        x=alt.X('sum_of_fatalities_air:Q', title="Total Fatalities"),
+        y=alt.Y("year:N", sort='-x', title="Year"),
+        color=alt.Color("year:N", scale=alt.Scale(scheme='category20'), legend=None)
+    ).properties(height=300)
 
-# display the chart
-st.altair_chart(chart, use_container_width= True)
+    st.altair_chart(chart, use_container_width=True)
+else:
+    st.info("No data to display for the selected filters.")
 
+top_countries = (
+    filtered_df.groupby("country_region")["sum_of_fatalities_air"]
+    .sum().nlargest(5).reset_index()
+)
 
+st.subheader("Top 5 Countries by Fatalities")
+pie_chart = alt.Chart(top_countries).mark_arc().encode(
+    theta="sum_of_fatalities_air:Q",
+    color=alt.Color("country_region:N", scale=alt.Scale(scheme='dark2')),
+    tooltip=["country_region:N", "sum_of_fatalities_air:Q"]
+).properties(height=300)
 
+st.altair_chart(pie_chart, use_container_width=True)
 
-
+print(crashes_per_year)
